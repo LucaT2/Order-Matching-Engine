@@ -1,0 +1,8 @@
+build/
+*.exe
+*.obj
+*.o
+.vscode/
+.DS_Store
+CMakeUserPresets.json
+PLAN.md
