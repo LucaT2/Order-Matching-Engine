@@ -6,6 +6,7 @@
 
 struct PriceLevel{
     uint64_t total_volume;
-    Order* head_index = nullptr;
-    Order* tail_index = nullptr;
+    uint32_t head_idx;
+    uint32_t tail_idx;
+
 };

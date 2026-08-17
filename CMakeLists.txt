@@ -4,11 +4,32 @@ project(HFT_Project LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Compiles main.cpp located at the root of E:/HFT_Project
-add_executable(matching_engine apps/main.cpp)
+option(HFT_NATIVE_ARCH "Enable -march=native (non-portable, faster on this machine only)" OFF)
+
+# --- Core library: everything under include/ and src/, no main() here ---
+add_library(matching_engine_core
+    src/OrderBook.cpp
+)
+
+target_include_directories(matching_engine_core PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
 if (MSVC)
-    target_compile_options(matching_engine PRIVATE /W4 /O2 /permissive-)
+    target_compile_options(matching_engine_core PRIVATE /W4 /permissive-)
 else()
-    target_compile_options(matching_engine PRIVATE -Wall -Wextra -O3 -march=native)
+    target_compile_options(matching_engine_core PRIVATE -Wall -Wextra)
+    if (HFT_NATIVE_ARCH)
+        target_compile_options(matching_engine_core PRIVATE -march=native)
+    endif()
+endif()
+
+# --- App: links against the core library, only has main.cpp ---
+add_executable(matching_engine apps/main.cpp)
+target_link_libraries(matching_engine PRIVATE matching_engine_core)
+
+if (MSVC)
+    target_compile_options(matching_engine PRIVATE /W4 /permissive- /O2)
+else()
+    target_compile_options(matching_engine PRIVATE -Wall -Wextra -O3)
 endif()
