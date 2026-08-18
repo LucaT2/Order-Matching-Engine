@@ -12,8 +12,7 @@
 #include <cstdint>
 #include <map>
 
-namespace hft_ob {
-    class OrderBook{
+class OrderBook{
         private:
             MemoryPool<Order> pool;
 
@@ -33,4 +32,3 @@ namespace hft_ob {
 
             
     };
-}

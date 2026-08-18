@@ -27,5 +27,5 @@ struct alignas(64) Order {
     uint32_t prev_idx;  // 4 bytes: prev Order in PriceLevel
     Side side;          // 1 byte : Buy or Sell
     OrderType type;     // 1 byte : Limit, Market
-    uint64_t ownerId; // id of the owner of the trade
+    uint64_t ownerId; // 8 bytes: id of the owner of the trade
 };

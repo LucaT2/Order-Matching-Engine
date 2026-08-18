@@ -1,29 +1,30 @@
 #include "../include/MemoryPool.hpp"
 #include <cstring>
+#include <new>
 
 template <typename T>
 MemoryPool<T>::MemoryPool(size_t capacity)
     : capacity_(capacity), free_head_(0)
 {
-    storage_ = static_cast<char *>(std::aligned_alloc(64, capacity * sizeof(T)));
+
+    storage_ = static_cast<char*>(::operator new(capacity * sizeof(T), std::align_val_t(64)));
 
     for (uint32_t i = 0; i < capacity - 1; ++i) {
         uint32_t *slot = reinterpret_cast<uint32_t *>(storage_ + (i * sizeof(T)));
-        *slot = i + 1;  // Point to next slot
+        *slot = i + 1; 
     }
 
-    // Last slot points to end of list
     uint32_t *last_slot = reinterpret_cast<uint32_t *>(
         storage_ + ((capacity - 1) * sizeof(T))
     );
-    *last_slot = UINT32_MAX; // mark last slot
+    *last_slot = UINT32_MAX;
 }
 
 template <typename T>
 MemoryPool<T>::~MemoryPool()
 {
     if (storage_) {
-        std::free(storage_);
+        ::operator delete(storage_, std::align_val_t(64));
         storage_ = nullptr;
     }
 }
