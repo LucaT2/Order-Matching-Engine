@@ -15,21 +15,13 @@ target_include_directories(matching_engine_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-if (MSVC)
-    target_compile_options(matching_engine_core PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(matching_engine_core PRIVATE -Wall -Wextra)
-    if (HFT_NATIVE_ARCH)
-        target_compile_options(matching_engine_core PRIVATE -march=native)
-    endif()
+target_compile_options(matching_engine_core PRIVATE -Wall -Wextra)
+if (HFT_NATIVE_ARCH)
+    target_compile_options(matching_engine_core PRIVATE -march=native)
 endif()
 
 # --- App: links against the core library, only has main.cpp ---
 add_executable(matching_engine apps/main.cpp)
 target_link_libraries(matching_engine PRIVATE matching_engine_core)
 
-if (MSVC)
-    target_compile_options(matching_engine PRIVATE /W4 /permissive- /O2)
-else()
-    target_compile_options(matching_engine PRIVATE -Wall -Wextra -O3)
-endif()
+target_compile_options(matching_engine PRIVATE -Wall -Wextra -O3)

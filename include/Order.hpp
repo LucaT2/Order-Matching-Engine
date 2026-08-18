@@ -9,8 +9,13 @@ enum class Side : uint8_t {
 
 enum class OrderType : uint8_t {
     Limit,
-    Market,
-    Cancel
+    Market
+};
+
+enum class Action : uint8_t {
+    New,
+    Cancel,
+    Modify
 };
 
 struct alignas(64) Order {
@@ -21,6 +26,6 @@ struct alignas(64) Order {
     uint32_t next_idx;  // 4 bytes: next Order in PriceLevel
     uint32_t prev_idx;  // 4 bytes: prev Order in PriceLevel
     Side side;          // 1 byte : Buy or Sell
-    OrderType type;     // 1 byte : Limit, Market, or Cancel
-    uint8_t padding[2]{0};
+    OrderType type;     // 1 byte : Limit, Market
+    uint64_t ownerId; // id of the owner of the trade
 };
