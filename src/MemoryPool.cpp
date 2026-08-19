@@ -74,6 +74,15 @@ T &MemoryPool<T>::at(uint32_t idx)
 }
 
 template <typename T>
+const T &MemoryPool<T>::at(uint32_t idx) const
+{
+    if (idx >= capacity_) {
+        throw std::out_of_range("Index out of range");
+    }
+    return *reinterpret_cast<const T *>(storage_ + (idx * sizeof(T)));
+}
+
+template <typename T>
 T *MemoryPool<T>::ptr(uint32_t idx)
 {
     if (idx >= capacity_) {

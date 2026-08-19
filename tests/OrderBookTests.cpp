@@ -3,7 +3,8 @@
 
 namespace {
 
-Order makeOrder(uint64_t id, Side side, OrderType type, uint64_t price, uint32_t qty, uint64_t owner) {
+Order makeOrder(uint64_t id, Side side, OrderType type, uint64_t price, uint32_t qty, uint64_t owner,
+                TimeInForce tif = TimeInForce::GTC) {
     Order o{};
     o.orderId = id;
     o.price = price;
@@ -14,6 +15,7 @@ Order makeOrder(uint64_t id, Side side, OrderType type, uint64_t price, uint32_t
     o.side = side;
     o.type = type;
     o.ownerId = owner;
+    o.tif = tif;
     return o;
 }
 
@@ -153,4 +155,51 @@ TEST(OrderBookTest, SelfTradeSkipsOwnOrderButStillMatchesOthers) {
 
     ASSERT_EQ(trades.size(), 1u);
     EXPECT_EQ(trades[0].sellOrderId, 2u);
+}
+
+TEST(OrderBookTest, FOKFillsCompletelyAcrossMultipleLevelsWhenLiquidityIsSufficient) {
+    OrderBook book(16);
+
+    book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 5, 1));
+    book.submit(makeOrder(2, Side::Sell, OrderType::Limit, 101, 5, 2));
+
+    auto trades = book.submit(
+        makeOrder(3, Side::Buy, OrderType::Limit, 101, 10, 3, TimeInForce::FOK));
+
+    ASSERT_EQ(trades.size(), 2u);
+    EXPECT_EQ(trades[0].price, 100u);
+    EXPECT_EQ(trades[1].price, 101u);
+}
+
+TEST(OrderBookTest, FOKDiscardsEntirelyAndTouchesNothingWhenLiquidityIsInsufficient) {
+    OrderBook book(16);
+
+    book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 5, 1));
+
+    // Only 5 available, but this FOK order wants 10 — must fill NONE of it.
+    auto trades = book.submit(
+        makeOrder(2, Side::Buy, OrderType::Limit, 100, 10, 2, TimeInForce::FOK));
+    EXPECT_EQ(trades.size(), 0u);
+
+    // The resting sell must be completely untouched — a fresh matching buy for
+    // the original 5 should still find it there and fill exactly 5.
+    auto trades2 = book.submit(makeOrder(3, Side::Buy, OrderType::Limit, 100, 5, 3));
+    ASSERT_EQ(trades2.size(), 1u);
+    EXPECT_EQ(trades2[0].sellOrderId, 1u);
+    EXPECT_EQ(trades2[0].quantity, 5u);
+}
+
+TEST(OrderBookTest, IOCPartiallyFillsAndDiscardsRemainder) {
+    OrderBook book(16);
+
+    book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 5, 1));
+    auto trades = book.submit(
+        makeOrder(2, Side::Buy, OrderType::Limit, 100, 10, 2, TimeInForce::IOC));
+
+    ASSERT_EQ(trades.size(), 1u);
+    EXPECT_EQ(trades[0].quantity, 5u);
+
+    // Remaining 5 of the IOC buy must NOT rest — confirm nothing sits in bids_ to match.
+    auto trades2 = book.submit(makeOrder(3, Side::Sell, OrderType::Limit, 100, 5, 3));
+    EXPECT_EQ(trades2.size(), 0u);
 }

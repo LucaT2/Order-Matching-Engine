@@ -4,6 +4,9 @@
 std::vector<Trade> OrderBook::submit(Order order)
 {
     std::vector<Trade> trades;
+    if (order.tif == TimeInForce::FOK && !canFullyMatch(order)) {
+        return std::vector<Trade>{};
+    }
 
     if (order.side == Side::Buy)
     {
@@ -13,9 +16,9 @@ std::vector<Trade> OrderBook::submit(Order order)
             PriceLevel &level = level_it->second;
             uint64_t level_price = level_it->first;
 
-            if (order.type == OrderType::Limit && order.price < level_price)
+            if ( order.tif != TimeInForce::IOC && order.type == OrderType::Limit && order.price < level_price)
             {
-                break; // best ask is above what we're willing to pay — stop matching
+                break; // price doesn't cross, stop here
             }
             // OrderType::Market keeps going after the break until no more sells left
 
@@ -26,7 +29,7 @@ std::vector<Trade> OrderBook::submit(Order order)
 
                 if (resting.ownerId == order.ownerId)
                 {
-                    resting_idx = resting.next_idx; // self-trade prevention: skip, don't match
+                    resting_idx = resting.next_idx; // same owner, skip this one
                     continue;
                 }
 
@@ -60,11 +63,11 @@ std::vector<Trade> OrderBook::submit(Order order)
 
             if (level.head_idx == UINT32_MAX)
             {
-                level_it = sells_.erase(level_it); // level fully drained, remove it and advance
+                level_it = sells_.erase(level_it); // nothing left here, drop it and move on
             }
             else
             {
-                ++level_it; // only self-owned orders left here — move to the next price level
+                ++level_it; // only self-owned orders left, try the next level
             }
         }
     }
@@ -76,7 +79,7 @@ std::vector<Trade> OrderBook::submit(Order order)
             PriceLevel &level = level_it->second;
             uint64_t level_price = level_it->first;
 
-            if (order.type == OrderType::Limit && order.price > level_price)
+            if ( order.tif != TimeInForce::IOC && order.type == OrderType::Limit && order.price > level_price)
             {
                 break;
             }
@@ -88,7 +91,7 @@ std::vector<Trade> OrderBook::submit(Order order)
 
                 if (resting.ownerId == order.ownerId)
                 {
-                    resting_idx = resting.next_idx; // self-trade prevention: skip, don't match
+                    resting_idx = resting.next_idx; // same owner, skip this one
                     continue;
                 }
 
@@ -122,16 +125,16 @@ std::vector<Trade> OrderBook::submit(Order order)
 
             if (level.head_idx == UINT32_MAX)
             {
-                level_it = bids_.erase(level_it); // level fully drained, remove it and advance
+                level_it = bids_.erase(level_it); // nothing left here, drop it and move on
             }
             else
             {
-                ++level_it; // only self-owned orders left here — move to the next price level
+                ++level_it; // only self-owned orders left, try the next level
             }
         }
     }
 
-    if (order.type == OrderType::Limit && order.quantity > 0)
+    if (order.type == OrderType::Limit && order.tif != TimeInForce::IOC && order.quantity > 0)
     {
         uint32_t idx = pool.allocate();
         pool.at(idx) = order;
@@ -140,7 +143,7 @@ std::vector<Trade> OrderBook::submit(Order order)
             auto it = bids_.find(order.price);
             if (it != bids_.end())
             {
-                // level already exists — append the new order to the tail of its FIFO queue
+                // level exists already, just add this order to the back of the queue
                 PriceLevel &level = it->second;
 
                 pool.at(idx).prev_idx = level.tail_idx;
@@ -152,7 +155,7 @@ std::vector<Trade> OrderBook::submit(Order order)
             }
             else
             {
-                PriceLevel &level = bids_[order.price]; // default-constructs(std::map::operator[] behavior)
+                PriceLevel &level = bids_[order.price]; // this creates the level automatically since it didn't exist yet
 
                 pool.at(idx).prev_idx = UINT32_MAX;
                 pool.at(idx).next_idx = UINT32_MAX;
@@ -177,7 +180,7 @@ std::vector<Trade> OrderBook::submit(Order order)
             }
             else
             {
-                PriceLevel &level = sells_[order.price]; // default-constructs(std::map::operator[] behavior)
+                PriceLevel &level = sells_[order.price]; // this creates the level automatically since it didn't exist yet
                 pool.at(idx).prev_idx = UINT32_MAX;
                 pool.at(idx).next_idx = UINT32_MAX;
 
@@ -188,18 +191,86 @@ std::vector<Trade> OrderBook::submit(Order order)
         }
         order_lookup_[order.orderId] = idx;
     }
-    else if (order.type == OrderType::Market && order.quantity > 0)
+    else if (order.quantity > 0)
     {
-        //Do nothing, basically discard the market order
+        // leftover from a market order or an IOC order, just drop it, it never rests
     }
     return trades;
+}
+
+bool OrderBook::canFullyMatch(const Order &order) const
+{
+    uint32_t matchable = 0;
+
+    if (order.side == Side::Buy)
+    {
+        for (auto level_it = sells_.begin(); level_it != sells_.end(); ++level_it)
+        {
+            const PriceLevel &level = level_it->second;
+            uint64_t level_price = level_it->first;
+
+            if (order.type == OrderType::Limit && order.price < level_price)
+            {
+                break; // price doesn't cross, nothing past this will either
+            }
+
+            uint32_t resting_idx = level.head_idx;
+            while (resting_idx != UINT32_MAX)
+            {
+                const Order &resting = pool.at(resting_idx);
+
+                if (resting.ownerId != order.ownerId)
+                {
+                    matchable += resting.quantity; // don't count our own orders
+                    if (matchable >= order.quantity)
+                    {
+                        return true; // we already have enough, no need to keep checking
+                    }
+                }
+
+                resting_idx = resting.next_idx;
+            }
+        }
+    }
+    else
+    {
+        for (auto level_it = bids_.begin(); level_it != bids_.end(); ++level_it)
+        {
+            const PriceLevel &level = level_it->second;
+            uint64_t level_price = level_it->first;
+
+            if (order.type == OrderType::Limit && order.price > level_price)
+            {
+                break;
+            }
+
+            uint32_t resting_idx = level.head_idx;
+            while (resting_idx != UINT32_MAX)
+            {
+                const Order &resting = pool.at(resting_idx);
+
+                if (resting.ownerId != order.ownerId)
+                {
+                    matchable += resting.quantity;
+                    if (matchable >= order.quantity)
+                    {
+                        return true;
+                    }
+                }
+
+                resting_idx = resting.next_idx;
+            }
+        }
+    }
+
+    return false; // went through every level and it still isn't enough
 }
 
 void OrderBook::cancel(uint64_t order_id)
 {
     auto it = order_lookup_.find(order_id);
     if (it == order_lookup_.end()) {
-        return; // unknown ID — nothing to cancel
+        return; // don't know this order, nothing to do
     }
 
     uint32_t idx = it->second;
@@ -217,7 +288,7 @@ void OrderBook::cancel(uint64_t order_id)
         level.total_volume -= order.quantity;
 
         if (level.head_idx == UINT32_MAX) {
-            bids_.erase(order.price); // level fully drained, remove it from the map
+            bids_.erase(order.price); // nothing left at this price, remove the level
         }
     }
     else {
@@ -232,7 +303,7 @@ void OrderBook::cancel(uint64_t order_id)
         level.total_volume -= order.quantity;
 
         if (level.head_idx == UINT32_MAX) {
-            sells_.erase(order.price); // level fully drained, remove it from the map
+            sells_.erase(order.price); // nothing left at this price, remove the level
         }
     }
 

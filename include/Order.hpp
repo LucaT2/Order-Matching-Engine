@@ -18,6 +18,12 @@ enum class Action : uint8_t {
     Modify
 };
 
+enum class TimeInForce : uint8_t{
+    GTC,
+    IOC,
+    FOK
+};
+
 struct alignas(64) Order {
     uint64_t orderId;   // 8 bytes: Unique identifier
     uint64_t price;     // 8 bytes: Price in ticks/cents (fixed-point math, no floats)
@@ -27,5 +33,6 @@ struct alignas(64) Order {
     uint32_t prev_idx;  // 4 bytes: prev Order in PriceLevel
     Side side;          // 1 byte : Buy or Sell
     OrderType type;     // 1 byte : Limit, Market
+    TimeInForce tif;    // 1 byte: How to execute the action
     uint64_t ownerId; // 8 bytes: id of the owner of the trade
 };

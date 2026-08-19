@@ -28,6 +28,8 @@ class OrderBook{
 
             std::vector<Trade> submit(Order order);
 
+            bool canFullyMatch(const Order &order) const;
+
             void cancel(uint64_t order_id);
 
             
