@@ -7,3 +7,4 @@ build/
 CMakeUserPresets.json
 PLAN.md
 build-asan-wsl
+COMMANDS.md

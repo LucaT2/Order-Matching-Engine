@@ -48,11 +48,17 @@ std::vector<Trade> OrderBook::submit(Order order)
 
                 if (resting.quantity == 0)
                 {
-                    level.head_idx = next_idx;
-                    if (next_idx != UINT32_MAX)
-                        pool.at(next_idx).prev_idx = UINT32_MAX;
+                    // general unlink, resting_idx is not always the head:
+                    // an earlier self-owned order could have been skipped, not removed
+                    if (resting.prev_idx != UINT32_MAX)
+                        pool.at(resting.prev_idx).next_idx = next_idx;
                     else
-                        level.tail_idx = UINT32_MAX; 
+                        level.head_idx = next_idx;
+
+                    if (next_idx != UINT32_MAX)
+                        pool.at(next_idx).prev_idx = resting.prev_idx;
+                    else
+                        level.tail_idx = resting.prev_idx;
 
                     order_lookup_.erase(resting.orderId);
                     pool.deallocate(resting_idx);
@@ -110,11 +116,17 @@ std::vector<Trade> OrderBook::submit(Order order)
 
                 if (resting.quantity == 0)
                 {
-                    level.head_idx = next_idx;
-                    if (next_idx != UINT32_MAX)
-                        pool.at(next_idx).prev_idx = UINT32_MAX;
+                    // general unlink, resting_idx is not always the head:
+                    // an earlier self-owned order could have been skipped, not removed
+                    if (resting.prev_idx != UINT32_MAX)
+                        pool.at(resting.prev_idx).next_idx = next_idx;
                     else
-                        level.tail_idx = UINT32_MAX;
+                        level.head_idx = next_idx;
+
+                    if (next_idx != UINT32_MAX)
+                        pool.at(next_idx).prev_idx = resting.prev_idx;
+                    else
+                        level.tail_idx = resting.prev_idx;
 
                     order_lookup_.erase(resting.orderId);
                     pool.deallocate(resting_idx);
@@ -309,4 +321,72 @@ void OrderBook::cancel(uint64_t order_id)
 
     pool.deallocate(idx);
     order_lookup_.erase(it);
+}
+
+bool OrderBook::checkInvariants() const
+{
+    for (auto it = bids_.begin(); it != bids_.end(); ++it)
+    {
+        const PriceLevel &level = it->second;
+        uint64_t summed = 0;
+        uint32_t idx = level.head_idx;
+        uint32_t prev = UINT32_MAX;
+        while (idx != UINT32_MAX)
+        {
+            const Order &o = pool.at(idx);
+            if (o.prev_idx != prev) return false; // back link doesn't match where we came from
+            summed += o.quantity;
+            prev = idx;
+            idx = o.next_idx;
+        }
+        if (prev != level.tail_idx) return false; // tail doesn't point at the last order we found
+        if (summed != level.total_volume) return false; // total_volume drifted from the real sum
+    }
+
+    for (auto it = sells_.begin(); it != sells_.end(); ++it)
+    {
+        const PriceLevel &level = it->second;
+        uint64_t summed = 0;
+        uint32_t idx = level.head_idx;
+        uint32_t prev = UINT32_MAX;
+        while (idx != UINT32_MAX)
+        {
+            const Order &o = pool.at(idx);
+            if (o.prev_idx != prev) return false;
+            summed += o.quantity;
+            prev = idx;
+            idx = o.next_idx;
+        }
+        if (prev != level.tail_idx) return false;
+        if (summed != level.total_volume) return false;
+    }
+
+    // A crossed price between a bid and an ask is only ok if they share an owner,
+    // since self-trade prevention is the one thing allowed to leave a real cross
+    // sitting in the book. Any cross between different owners means the matching
+    // loop missed a trade it should have made.
+    for (auto bid_it = bids_.begin(); bid_it != bids_.end(); ++bid_it)
+    {
+        uint64_t bid_price = bid_it->first;
+        for (auto ask_it = sells_.begin(); ask_it != sells_.end(); ++ask_it)
+        {
+            if (bid_price < ask_it->first) break; // this and everything after no longer crosses
+
+            for (uint32_t b = bid_it->second.head_idx; b != UINT32_MAX; b = pool.at(b).next_idx)
+            {
+                for (uint32_t s = ask_it->second.head_idx; s != UINT32_MAX; s = pool.at(s).next_idx)
+                {
+                    if (pool.at(b).ownerId != pool.at(s).ownerId) return false;
+                }
+            }
+        }
+    }
+
+    // every order we're tracking for cancel should point back to a slot with a matching id
+    for (const auto &entry : order_lookup_)
+    {
+        if (pool.at(entry.second).orderId != entry.first) return false;
+    }
+
+    return true;
 }

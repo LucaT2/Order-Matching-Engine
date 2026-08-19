@@ -32,5 +32,7 @@ class OrderBook{
 
             void cancel(uint64_t order_id);
 
+            bool checkInvariants() const;
+
             
     };
