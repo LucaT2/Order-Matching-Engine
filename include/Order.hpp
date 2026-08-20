@@ -12,12 +12,6 @@ enum class OrderType : uint8_t {
     Market
 };
 
-enum class Action : uint8_t {
-    New,
-    Cancel,
-    Modify
-};
-
 enum class TimeInForce : uint8_t{
     GTC,
     IOC,
