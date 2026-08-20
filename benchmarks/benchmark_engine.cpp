@@ -135,7 +135,6 @@ int main() {
 
         auto percentile = [&](double p) {
             size_t idx = static_cast<size_t>(p * static_cast<double>(latenciesNs.size()));
-            if (idx >= latenciesNs.size()) idx = latenciesNs.size() - 1;
             return latenciesNs[idx];
         };
 
