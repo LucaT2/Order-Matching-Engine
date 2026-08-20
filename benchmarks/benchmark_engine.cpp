@@ -23,9 +23,7 @@ Order makeOrder(uint64_t id, Side side, OrderType type, uint64_t price, uint32_t
     return o;
 }
 
-// One "action" in the pre-generated flow: either a new order to submit, or an
-// id to cancel. Generated up front so none of this randomness runs inside
-// whatever region we end up timing.
+// generated up front so the random number generator never runs inside a timed loop
 struct Action {
     bool isCancel;
     Order order;      // valid when isCancel == false
@@ -81,7 +79,7 @@ void applyAction(OrderBook &book, const Action &action) {
 int main() {
     constexpr uint32_t seed = 42;
     constexpr size_t warmupCount = 5000;
-    constexpr size_t throughputCount = 200000;
+    constexpr size_t throughputCount = 2000000;
     constexpr size_t latencyCount = 50000;
 
     std::vector<Action> warmupActions = generateActions(warmupCount, seed);
@@ -92,14 +90,13 @@ int main() {
               << throughputActions.size() << " throughput, "
               << latencyActions.size() << " latency actions\n";
 
-    constexpr uint32_t poolCapacity = 300000; // generous, avoids pool exhaustion mid-run
+    constexpr uint32_t poolCapacity = 1000000; // big enough that we won't run out mid-run
 
-    // ---- throughput ----
     {
         OrderBook book(poolCapacity);
 
         for (const auto &action : warmupActions) {
-            applyAction(book, action); // untimed, just warms up the pool's memory pages
+            applyAction(book, action); // not timed, just warming things up first
         }
 
         auto start = std::chrono::steady_clock::now();
@@ -116,7 +113,6 @@ int main() {
                   << static_cast<uint64_t>(perSecond) << " actions/sec\n";
     }
 
-    // ---- latency percentiles ----
     {
         OrderBook book(poolCapacity);
 
@@ -125,7 +121,7 @@ int main() {
         }
 
         std::vector<int64_t> latenciesNs;
-        latenciesNs.reserve(latencyActions.size()); // avoid reallocation skewing the tail
+        latenciesNs.reserve(latencyActions.size()); // no reallocations, they'd skew the tail
 
         for (const auto &action : latencyActions) {
             auto start = std::chrono::steady_clock::now();
