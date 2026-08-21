@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+const uint64_t TICK = 100;
+
 enum class Side : uint8_t {
     Buy,
     Sell
