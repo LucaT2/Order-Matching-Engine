@@ -7,14 +7,18 @@ std::vector<Trade> OrderBook::submit(Order order)
     if (order.tif == TimeInForce::FOK && !canFullyMatch(order)) {
         return std::vector<Trade>{};
     }
+    if (order.type == OrderType::Limit && (order.price < min_price_ || order.price > max_price_)) {
+        return std::vector<Trade>{}; // price is out of the book's range, can't match
+    }
 
-    if (order.side == Side::Buy)
+    if (order.side == Side::Buy && best_ask_idx_ != UINT64_MAX)
     {
-        auto level_it = sells_.begin();
-        while (order.quantity > 0 && level_it != sells_.end())
+        uint64_t idx = best_ask_idx_;
+        while (order.quantity > 0 && idx < sells_.size())
         {
-            PriceLevel &level = level_it->second;
-            uint64_t level_price = level_it->first;
+            
+            PriceLevel &level = sells_[idx];
+            uint64_t level_price = min_price_ + idx;
 
             if ( order.tif != TimeInForce::IOC && order.type == OrderType::Limit && order.price < level_price)
             {
@@ -66,24 +70,16 @@ std::vector<Trade> OrderBook::submit(Order order)
 
                 resting_idx = next_idx;
             }
-
-            if (level.head_idx == UINT32_MAX)
-            {
-                level_it = sells_.erase(level_it); // nothing left here, drop it and move on
-            }
-            else
-            {
-                ++level_it; // only self-owned orders left, try the next level
-            }
+                ++idx; // only self-owned orders left, try the next level
         }
     }
-    else
+    else if (order.side == Side::Sell && best_bid_idx_ != UINT64_MAX)
     {
-        auto level_it = bids_.begin();
-        while (order.quantity > 0 && level_it != bids_.end())
+        uint64_t idx = best_bid_idx_;
+        while (order.quantity > 0) // idx is handled lower in the loop, so we don't need to check it here
         {
-            PriceLevel &level = level_it->second;
-            uint64_t level_price = level_it->first;
+            PriceLevel &level = bids_[idx];
+            uint64_t level_price = min_price_ + idx;
 
             if ( order.tif != TimeInForce::IOC && order.type == OrderType::Limit && order.price > level_price)
             {
@@ -134,15 +130,9 @@ std::vector<Trade> OrderBook::submit(Order order)
 
                 resting_idx = next_idx;
             }
-
-            if (level.head_idx == UINT32_MAX)
-            {
-                level_it = bids_.erase(level_it); // nothing left here, drop it and move on
-            }
-            else
-            {
-                ++level_it; // only self-owned orders left, try the next level
-            }
+                if (idx == 0) break; // prevent underflow
+                --idx; // only self-owned orders left, try the next level
+    
         }
     }
 
@@ -150,14 +140,17 @@ std::vector<Trade> OrderBook::submit(Order order)
     {
         uint32_t idx = pool.allocate();
         pool.at(idx) = order;
+    
         if (order.side == Side::Buy)
         {
-            auto it = bids_.find(order.price);
-            if (it != bids_.end())
+            if (best_bid_idx_ == UINT64_MAX || order.price > min_price_ + best_bid_idx_)
+            {
+                best_bid_idx_ = order.price - min_price_;
+            }
+            PriceLevel &level = bids_[order.price - min_price_]; 
+            if (level.head_idx != UINT32_MAX)
             {
                 // level exists already, just add this order to the back of the queue
-                PriceLevel &level = it->second;
-
                 pool.at(idx).prev_idx = level.tail_idx;
                 pool.at(idx).next_idx = UINT32_MAX;
                 pool.at(level.tail_idx).next_idx = idx; // old tail -> new order
@@ -167,8 +160,6 @@ std::vector<Trade> OrderBook::submit(Order order)
             }
             else
             {
-                PriceLevel &level = bids_[order.price]; // this creates the level automatically since it didn't exist yet
-
                 pool.at(idx).prev_idx = UINT32_MAX;
                 pool.at(idx).next_idx = UINT32_MAX;
 
@@ -177,12 +168,15 @@ std::vector<Trade> OrderBook::submit(Order order)
                 level.total_volume = order.quantity;
             }
         }
-        else
+        else // order.side == Side::Sell
         {
-            auto it = sells_.find(order.price);
-            if (it != sells_.end())
+            if (best_ask_idx_ == UINT64_MAX || order.price < min_price_ + best_ask_idx_)
             {
-                PriceLevel &level = it->second;
+                best_ask_idx_ = order.price - min_price_;
+            }
+            PriceLevel &level = sells_[order.price - min_price_];
+            if (level.head_idx != UINT32_MAX)
+            {
                 pool.at(idx).prev_idx = level.tail_idx;
                 pool.at(idx).next_idx = UINT32_MAX;
                 pool.at(level.tail_idx).next_idx = idx;
@@ -192,7 +186,6 @@ std::vector<Trade> OrderBook::submit(Order order)
             }
             else
             {
-                PriceLevel &level = sells_[order.price]; // this creates the level automatically since it didn't exist yet
                 pool.at(idx).prev_idx = UINT32_MAX;
                 pool.at(idx).next_idx = UINT32_MAX;
 
@@ -218,8 +211,8 @@ bool OrderBook::canFullyMatch(const Order &order) const
     {
         for (auto level_it = sells_.begin(); level_it != sells_.end(); ++level_it)
         {
-            const PriceLevel &level = level_it->second;
-            uint64_t level_price = level_it->first;
+            const PriceLevel &level = sells_[level_it - sells_.begin()];
+            uint64_t level_price = min_price_ + (level_it - sells_.begin());
 
             if (order.type == OrderType::Limit && order.price < level_price)
             {
@@ -244,12 +237,12 @@ bool OrderBook::canFullyMatch(const Order &order) const
             }
         }
     }
-    else
+    else // order.side == Side::Sell
     {
-        for (auto level_it = bids_.begin(); level_it != bids_.end(); ++level_it)
+        for (auto level_it = bids_.end()-1 ; ; --level_it)
         {
-            const PriceLevel &level = level_it->second;
-            uint64_t level_price = level_it->first;
+            const PriceLevel &level = bids_[level_it - bids_.begin()];
+            uint64_t level_price = min_price_ + (level_it - bids_.begin());
 
             if (order.type == OrderType::Limit && order.price > level_price)
             {
@@ -272,6 +265,7 @@ bool OrderBook::canFullyMatch(const Order &order) const
 
                 resting_idx = resting.next_idx;
             }
+            if (level_it == bids_.begin()) break; // prevent underflow
         }
     }
 
@@ -289,7 +283,7 @@ void OrderBook::cancel(uint64_t order_id)
     Order order = pool.at(idx);
 
     if (order.side == Side::Buy) {
-        PriceLevel& level = bids_.find(order.price)->second;
+        PriceLevel& level = bids_[order.price - min_price_];
 
         if (order.prev_idx != UINT32_MAX) pool.at(order.prev_idx).next_idx = order.next_idx;
         else                              level.head_idx = order.next_idx;
@@ -299,12 +293,10 @@ void OrderBook::cancel(uint64_t order_id)
 
         level.total_volume -= order.quantity;
 
-        if (level.head_idx == UINT32_MAX) {
-            bids_.erase(order.price); // nothing left at this price, remove the level
-        }
+
     }
     else {
-        PriceLevel& level = sells_.find(order.price)->second;
+        PriceLevel& level = sells_[order.price - min_price_];
 
         if (order.prev_idx != UINT32_MAX) pool.at(order.prev_idx).next_idx = order.next_idx;
         else                              level.head_idx = order.next_idx;
@@ -314,9 +306,6 @@ void OrderBook::cancel(uint64_t order_id)
 
         level.total_volume -= order.quantity;
 
-        if (level.head_idx == UINT32_MAX) {
-            sells_.erase(order.price); // nothing left at this price, remove the level
-        }
     }
 
     pool.deallocate(idx);
@@ -325,9 +314,9 @@ void OrderBook::cancel(uint64_t order_id)
 
 bool OrderBook::checkInvariants() const
 {
-    for (auto it = bids_.begin(); it != bids_.end(); ++it)
+    for (auto it = bids_.end()-1; ; --it)
     {
-        const PriceLevel &level = it->second;
+        const PriceLevel &level = bids_[it - bids_.begin()];
         uint64_t summed = 0;
         uint32_t idx = level.head_idx;
         uint32_t prev = UINT32_MAX;
@@ -341,11 +330,12 @@ bool OrderBook::checkInvariants() const
         }
         if (prev != level.tail_idx) return false; // tail doesn't point at the last order we found
         if (summed != level.total_volume) return false; // total_volume drifted from the real sum
+        if (it == bids_.begin()) break; // prevent underflow
     }
 
     for (auto it = sells_.begin(); it != sells_.end(); ++it)
     {
-        const PriceLevel &level = it->second;
+        const PriceLevel &level = sells_[it - sells_.begin()];
         uint64_t summed = 0;
         uint32_t idx = level.head_idx;
         uint32_t prev = UINT32_MAX;
@@ -367,14 +357,14 @@ bool OrderBook::checkInvariants() const
     // loop missed a trade it should have made.
     for (auto bid_it = bids_.begin(); bid_it != bids_.end(); ++bid_it)
     {
-        uint64_t bid_price = bid_it->first;
+        uint64_t bid_price = min_price_ + (bid_it - bids_.begin());
         for (auto ask_it = sells_.begin(); ask_it != sells_.end(); ++ask_it)
         {
-            if (bid_price < ask_it->first) break; // this and everything after no longer crosses
+            if (bid_price < min_price_ + (ask_it - sells_.begin())) break; // this and everything after no longer crosses
 
-            for (uint32_t b = bid_it->second.head_idx; b != UINT32_MAX; b = pool.at(b).next_idx)
+            for (uint32_t b = bids_[bid_it - bids_.begin()].head_idx; b != UINT32_MAX; b = pool.at(b).next_idx)
             {
-                for (uint32_t s = ask_it->second.head_idx; s != UINT32_MAX; s = pool.at(s).next_idx)
+                for (uint32_t s = sells_[ask_it - sells_.begin()].head_idx; s != UINT32_MAX; s = pool.at(s).next_idx)
                 {
                     if (pool.at(b).ownerId != pool.at(s).ownerId) return false;
                 }

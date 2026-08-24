@@ -24,7 +24,7 @@ Order makeOrder(uint64_t id, Side side, OrderType type, uint64_t price, uint32_t
 } // namespace
 
 TEST(OrderBookTest, ExactMatchProducesOneTrade) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
 
     book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 10, /*owner*/ 1));
     auto trades = book.submit(makeOrder(2, Side::Buy, OrderType::Limit, 100, 10, /*owner*/ 2));
@@ -37,7 +37,7 @@ TEST(OrderBookTest, ExactMatchProducesOneTrade) {
 }
 
 TEST(OrderBookTest, PartialFillLeavesRestingRemainder) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
 
     book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 10, 1));
     auto trades = book.submit(makeOrder(2, Side::Buy, OrderType::Limit, 100, 4, 2));
@@ -56,7 +56,7 @@ TEST(OrderBookTest, PartialFillLeavesRestingRemainder) {
 }
 
 TEST(OrderBookTest, PriceTimePriorityFIFO) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
 
     book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 5, 1)); // resting first
     book.submit(makeOrder(2, Side::Sell, OrderType::Limit, 100, 5, 2)); // resting second
@@ -68,7 +68,7 @@ TEST(OrderBookTest, PriceTimePriorityFIFO) {
 }
 
 TEST(OrderBookTest, SweepsMultipleLevelsAtRestingPrices) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
 
     book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 5, 1));
     book.submit(makeOrder(2, Side::Sell, OrderType::Limit, 101, 5, 2));
@@ -81,7 +81,7 @@ TEST(OrderBookTest, SweepsMultipleLevelsAtRestingPrices) {
 }
 
 TEST(OrderBookTest, CancelRemovesRestingOrder) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
 
     book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 10, 1));
     book.cancel(1);
@@ -91,7 +91,7 @@ TEST(OrderBookTest, CancelRemovesRestingOrder) {
 }
 
 TEST(OrderBookTest, CancelMiddleOrderPreservesRemainingFIFO) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
 
     book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 5, 1));
     book.submit(makeOrder(2, Side::Sell, OrderType::Limit, 100, 5, 2));
@@ -107,12 +107,12 @@ TEST(OrderBookTest, CancelMiddleOrderPreservesRemainingFIFO) {
 }
 
 TEST(OrderBookTest, CancelUnknownIdIsNoop) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
     EXPECT_NO_THROW(book.cancel(999));
 }
 
 TEST(OrderBookTest, MarketOrderAgainstEmptyBookIsDiscarded) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
 
     auto trades = book.submit(makeOrder(1, Side::Buy, OrderType::Market, 0, 10, 1));
     EXPECT_EQ(trades.size(), 0u);
@@ -123,7 +123,7 @@ TEST(OrderBookTest, MarketOrderAgainstEmptyBookIsDiscarded) {
 }
 
 TEST(OrderBookTest, MarketOrderPartialFillDiscardsRemainder) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
 
     book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 5, 1));
     auto trades = book.submit(makeOrder(2, Side::Buy, OrderType::Market, 0, 10, 2));
@@ -137,7 +137,7 @@ TEST(OrderBookTest, MarketOrderPartialFillDiscardsRemainder) {
 }
 
 TEST(OrderBookTest, SelfTradeIsPrevented) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
 
     // same owner on both sides, must not trade against itself
     book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 5, 7));
@@ -146,7 +146,7 @@ TEST(OrderBookTest, SelfTradeIsPrevented) {
 }
 
 TEST(OrderBookTest, SelfTradeSkipsOwnOrderButStillMatchesOthers) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
 
     // same price level, owner 7's sell resting first, owner 8's sell second
     book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 5, 7));
@@ -160,7 +160,7 @@ TEST(OrderBookTest, SelfTradeSkipsOwnOrderButStillMatchesOthers) {
 }
 
 TEST(OrderBookTest, FOKFillsCompletelyAcrossMultipleLevelsWhenLiquidityIsSufficient) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
 
     book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 5, 1));
     book.submit(makeOrder(2, Side::Sell, OrderType::Limit, 101, 5, 2));
@@ -174,7 +174,7 @@ TEST(OrderBookTest, FOKFillsCompletelyAcrossMultipleLevelsWhenLiquidityIsSuffici
 }
 
 TEST(OrderBookTest, FOKDiscardsEntirelyAndTouchesNothingWhenLiquidityIsInsufficient) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
 
     book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 5, 1));
 
@@ -192,7 +192,7 @@ TEST(OrderBookTest, FOKDiscardsEntirelyAndTouchesNothingWhenLiquidityIsInsuffici
 }
 
 TEST(OrderBookTest, IOCPartiallyFillsAndDiscardsRemainder) {
-    OrderBook book(16);
+    OrderBook book(16, 105, 95);
 
     book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 5, 1));
     auto trades = book.submit(
@@ -211,7 +211,7 @@ TEST(OrderBookTest, FuzzRandomSequenceKeepsInvariantsHolding) {
     std::cout << "fuzz seed: " << seed << "\n";
     std::mt19937 rng(seed);
 
-    OrderBook book(8192); // generous capacity, a few thousand random orders can pile up
+    OrderBook book(8192, 105, 95); // generous capacity, a few thousand random orders can pile up
 
     std::uniform_int_distribution<int> action_pick(0, 1);      // 0 = submit, 1 = cancel
     std::uniform_int_distribution<uint64_t> price_pick(95, 105);

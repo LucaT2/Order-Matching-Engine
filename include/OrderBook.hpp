@@ -27,13 +27,19 @@ class OrderBook{
             uint64_t max_price_; 
             uint64_t min_price_;
 
+            //Best buy and sell prices
+            uint64_t best_bid_idx_;
+            uint64_t best_ask_idx_;
+
         public:
             explicit OrderBook(uint64_t cap, uint64_t max_price,
             uint64_t min_price): pool(cap),
             bids_(max_price - min_price + 1),
             sells_(max_price - min_price + 1), 
             max_price_(max_price),
-            min_price_(min_price){}
+            min_price_(min_price),
+            best_bid_idx_(UINT64_MAX),
+            best_ask_idx_(UINT64_MAX){}
 
             std::vector<Trade> submit(Order order);
 
