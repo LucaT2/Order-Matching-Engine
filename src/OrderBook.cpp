@@ -1,16 +1,39 @@
 #include "../include/OrderBook.hpp"
 #include "OrderBook.hpp"
 
+void OrderBook::refreshBestBid()
+{
+    // only steps past levels that are truly empty (head_idx == UINT32_MAX) --
+    // a level with only self-owned-for-some-order orders left is NOT empty,
+    // it can still trade with a different owner, so it must stay the best
+    while (best_bid_idx_ != UINT64_MAX && bids_[best_bid_idx_].head_idx == UINT32_MAX)
+    {
+        if (best_bid_idx_ == 0) { best_bid_idx_ = UINT64_MAX; break; }
+        --best_bid_idx_;
+    }
+}
+
+void OrderBook::refreshBestAsk()
+{
+    while (best_ask_idx_ != UINT64_MAX && sells_[best_ask_idx_].head_idx == UINT32_MAX)
+    {
+        ++best_ask_idx_;
+        if (best_ask_idx_ >= sells_.size()) { best_ask_idx_ = UINT64_MAX; break; }
+    }
+}
+
 std::vector<Trade> OrderBook::submit(Order order)
 {
     std::vector<Trade> trades;
-    if (order.tif == TimeInForce::FOK && !canFullyMatch(order)) {
-        return std::vector<Trade>{};
-    }
+
     if (order.type == OrderType::Limit && (order.price < min_price_ || order.price > max_price_)) {
         return std::vector<Trade>{}; // price is out of the book's range, can't match
     }
 
+    if (order.tif == TimeInForce::FOK && !canFullyMatch(order)) {
+        return std::vector<Trade>{};
+    }
+    
     if (order.side == Side::Buy && best_ask_idx_ != UINT64_MAX)
     {
         uint64_t idx = best_ask_idx_;
@@ -72,6 +95,7 @@ std::vector<Trade> OrderBook::submit(Order order)
             }
                 ++idx; // only self-owned orders left, try the next level
         }
+        refreshBestAsk(); // this call's scan may have drained the level best_ask_idx_ pointed at
     }
     else if (order.side == Side::Sell && best_bid_idx_ != UINT64_MAX)
     {
@@ -132,8 +156,9 @@ std::vector<Trade> OrderBook::submit(Order order)
             }
                 if (idx == 0) break; // prevent underflow
                 --idx; // only self-owned orders left, try the next level
-    
+
         }
+        refreshBestBid(); // this call's scan may have drained the level best_bid_idx_ pointed at
     }
 
     if (order.type == OrderType::Limit && order.tif != TimeInForce::IOC && order.quantity > 0)
@@ -209,10 +234,12 @@ bool OrderBook::canFullyMatch(const Order &order) const
 
     if (order.side == Side::Buy)
     {
-        for (auto level_it = sells_.begin(); level_it != sells_.end(); ++level_it)
+        if (best_ask_idx_ == UINT64_MAX) return false; // no asks at all, can't match anything
+
+        for (uint64_t idx = best_ask_idx_; idx < sells_.size(); ++idx)
         {
-            const PriceLevel &level = sells_[level_it - sells_.begin()];
-            uint64_t level_price = min_price_ + (level_it - sells_.begin());
+            const PriceLevel &level = sells_[idx];
+            uint64_t level_price = min_price_ + idx;
 
             if (order.type == OrderType::Limit && order.price < level_price)
             {
@@ -239,10 +266,12 @@ bool OrderBook::canFullyMatch(const Order &order) const
     }
     else // order.side == Side::Sell
     {
-        for (auto level_it = bids_.end()-1 ; ; --level_it)
+        if (best_bid_idx_ == UINT64_MAX) return false; // no bids at all, can't match anything
+
+        for (uint64_t idx = best_bid_idx_; ; )
         {
-            const PriceLevel &level = bids_[level_it - bids_.begin()];
-            uint64_t level_price = min_price_ + (level_it - bids_.begin());
+            const PriceLevel &level = bids_[idx];
+            uint64_t level_price = min_price_ + idx;
 
             if (order.type == OrderType::Limit && order.price > level_price)
             {
@@ -265,7 +294,8 @@ bool OrderBook::canFullyMatch(const Order &order) const
 
                 resting_idx = resting.next_idx;
             }
-            if (level_it == bids_.begin()) break; // prevent underflow
+            if (idx == 0) break; // prevent underflow
+            --idx;
         }
     }
 
@@ -293,7 +323,7 @@ void OrderBook::cancel(uint64_t order_id)
 
         level.total_volume -= order.quantity;
 
-
+        refreshBestBid();
     }
     else {
         PriceLevel& level = sells_[order.price - min_price_];
@@ -306,6 +336,7 @@ void OrderBook::cancel(uint64_t order_id)
 
         level.total_volume -= order.quantity;
 
+        refreshBestAsk();
     }
 
     pool.deallocate(idx);

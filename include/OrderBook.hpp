@@ -31,6 +31,11 @@ class OrderBook{
             uint64_t best_bid_idx_;
             uint64_t best_ask_idx_;
 
+            // Step best_bid_idx_/best_ask_idx_ inward past levels that have gone
+            // empty since they were last used as the scan starting point
+            void refreshBestBid();
+            void refreshBestAsk();
+
         public:
             explicit OrderBook(uint64_t cap, uint64_t max_price,
             uint64_t min_price): pool(cap),
