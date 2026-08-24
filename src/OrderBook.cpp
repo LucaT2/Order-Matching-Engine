@@ -1,25 +1,78 @@
 #include "../include/OrderBook.hpp"
 #include "OrderBook.hpp"
+#include <bit>
+
+void OrderBook::setOccupied(std::vector<uint64_t> &occ, uint64_t idx)
+{
+    occ[idx / 64] |= (1ULL << (idx % 64));
+}
+
+void OrderBook::clearOccupied(std::vector<uint64_t> &occ, uint64_t idx)
+{
+    occ[idx / 64] &= ~(1ULL << (idx % 64));
+}
+
+uint64_t OrderBook::nextOccupiedAscending(const std::vector<uint64_t> &occ, uint64_t from, uint64_t levels)
+{
+    if (from >= levels) return UINT64_MAX;
+
+    uint64_t word_idx = from / 64;
+    uint64_t bit_idx = from % 64;
+
+    // drop every bit below 'from' in the starting word so the scan begins exactly there
+    uint64_t word = occ[word_idx] & (~0ULL << bit_idx);
+
+    for (;;)
+    {
+        if (word != 0)
+        {
+            return word_idx * 64 + static_cast<uint64_t>(std::countr_zero(word));
+        }
+        ++word_idx;
+        if (word_idx >= occ.size()) return UINT64_MAX;
+        word = occ[word_idx];
+    }
+}
+
+uint64_t OrderBook::nextOccupiedDescending(const std::vector<uint64_t> &occ, uint64_t from)
+{
+    uint64_t word_idx = from / 64;
+    uint64_t bit_idx = from % 64;
+
+    // keep only bits at or below 'from' in the starting word (shifting by 64 is UB, hence the guard)
+    uint64_t mask = (bit_idx == 63) ? ~0ULL : ((1ULL << (bit_idx + 1)) - 1);
+    uint64_t word = occ[word_idx] & mask;
+
+    for (;;)
+    {
+        if (word != 0)
+        {
+            uint64_t highest_bit = 63 - static_cast<uint64_t>(std::countl_zero(word));
+            return word_idx * 64 + highest_bit;
+        }
+        if (word_idx == 0) return UINT64_MAX;
+        --word_idx;
+        word = occ[word_idx];
+    }
+}
 
 void OrderBook::refreshBestBid()
 {
     // only steps past levels that are truly empty (head_idx == UINT32_MAX) --
     // a level with only self-owned-for-some-order orders left is NOT empty,
     // it can still trade with a different owner, so it must stay the best
-    while (best_bid_idx_ != UINT64_MAX && bids_[best_bid_idx_].head_idx == UINT32_MAX)
-    {
-        if (best_bid_idx_ == 0) { best_bid_idx_ = UINT64_MAX; break; }
-        --best_bid_idx_;
-    }
+    if (best_bid_idx_ == UINT64_MAX) return;
+    if (bids_[best_bid_idx_].head_idx != UINT32_MAX) return; // still occupied, nothing to do
+
+    best_bid_idx_ = nextOccupiedDescending(bids_occupied_, best_bid_idx_);
 }
 
 void OrderBook::refreshBestAsk()
 {
-    while (best_ask_idx_ != UINT64_MAX && sells_[best_ask_idx_].head_idx == UINT32_MAX)
-    {
-        ++best_ask_idx_;
-        if (best_ask_idx_ >= sells_.size()) { best_ask_idx_ = UINT64_MAX; break; }
-    }
+    if (best_ask_idx_ == UINT64_MAX) return;
+    if (sells_[best_ask_idx_].head_idx != UINT32_MAX) return;
+
+    best_ask_idx_ = nextOccupiedAscending(sells_occupied_, best_ask_idx_, sells_.size());
 }
 
 std::vector<Trade> OrderBook::submit(Order order)
@@ -93,6 +146,7 @@ std::vector<Trade> OrderBook::submit(Order order)
 
                 resting_idx = next_idx;
             }
+                if (level.head_idx == UINT32_MAX) clearOccupied(sells_occupied_, idx);
                 ++idx; // only self-owned orders left, try the next level
         }
         refreshBestAsk(); // this call's scan may have drained the level best_ask_idx_ pointed at
@@ -154,6 +208,7 @@ std::vector<Trade> OrderBook::submit(Order order)
 
                 resting_idx = next_idx;
             }
+                if (level.head_idx == UINT32_MAX) clearOccupied(bids_occupied_, idx);
                 if (idx == 0) break; // prevent underflow
                 --idx; // only self-owned orders left, try the next level
 
@@ -191,6 +246,8 @@ std::vector<Trade> OrderBook::submit(Order order)
                 level.head_idx = idx;
                 level.tail_idx = idx;
                 level.total_volume = order.quantity;
+
+                setOccupied(bids_occupied_, order.price - min_price_);
             }
         }
         else // order.side == Side::Sell
@@ -217,6 +274,8 @@ std::vector<Trade> OrderBook::submit(Order order)
                 level.head_idx = idx;
                 level.tail_idx = idx;
                 level.total_volume = order.quantity;
+
+                setOccupied(sells_occupied_, order.price - min_price_);
             }
         }
         order_lookup_[order.orderId] = idx;
@@ -323,6 +382,7 @@ void OrderBook::cancel(uint64_t order_id)
 
         level.total_volume -= order.quantity;
 
+        if (level.head_idx == UINT32_MAX) clearOccupied(bids_occupied_, order.price - min_price_);
         refreshBestBid();
     }
     else {
@@ -336,6 +396,7 @@ void OrderBook::cancel(uint64_t order_id)
 
         level.total_volume -= order.quantity;
 
+        if (level.head_idx == UINT32_MAX) clearOccupied(sells_occupied_, order.price - min_price_);
         refreshBestAsk();
     }
 

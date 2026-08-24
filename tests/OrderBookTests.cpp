@@ -206,6 +206,41 @@ TEST(OrderBookTest, IOCPartiallyFillsAndDiscardsRemainder) {
     EXPECT_EQ(trades2.size(), 0u);
 }
 
+TEST(OrderBookTest, BestPointerSkipsAcrossMultipleEmptyBitsetWords) {
+    // price range spans 301 levels (0..300), which needs 5 64-bit words in the
+    // occupancy bitset -- wide enough that closing the gap between two resting
+    // orders has to cross whole empty words, not just step +-1 a few times
+    OrderBook book(64, 300, 0);
+
+    // asks: resting far apart, gap crosses multiple 64-level words
+    book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 10, 5, 1));   // word 0
+    book.submit(makeOrder(2, Side::Sell, OrderType::Limit, 250, 5, 2)); // word 3
+
+    // draining the level at price 10 forces refreshBestAsk() to jump ahead
+    // across empty words 0-2 to find price 250
+    book.cancel(1);
+
+    auto trades = book.submit(makeOrder(3, Side::Buy, OrderType::Limit, 250, 5, 3));
+    ASSERT_EQ(trades.size(), 1u);
+    EXPECT_EQ(trades[0].sellOrderId, 2u);
+    EXPECT_EQ(trades[0].price, 250u);
+
+    // bids: same idea, descending this time
+    book.submit(makeOrder(4, Side::Buy, OrderType::Limit, 20, 5, 4));  // word 0
+    book.submit(makeOrder(5, Side::Buy, OrderType::Limit, 280, 5, 5)); // word 4
+
+    // draining the level at price 280 (the current best bid) forces
+    // refreshBestBid() to jump backward across empty words to find price 20
+    book.cancel(5);
+
+    auto trades2 = book.submit(makeOrder(6, Side::Sell, OrderType::Limit, 20, 5, 6));
+    ASSERT_EQ(trades2.size(), 1u);
+    EXPECT_EQ(trades2[0].buyOrderId, 4u);
+    EXPECT_EQ(trades2[0].price, 20u);
+
+    EXPECT_TRUE(book.checkInvariants());
+}
+
 TEST(OrderBookTest, FuzzRandomSequenceKeepsInvariantsHolding) {
     constexpr uint32_t seed = 12345; // print it so a failing run can be reproduced exactly
     std::cout << "fuzz seed: " << seed << "\n";
