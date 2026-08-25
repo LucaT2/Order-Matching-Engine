@@ -241,7 +241,7 @@ TEST(OrderBookTest, BestPointerSkipsAcrossManyEmptyLevels) {
 }
 
 TEST(OrderBookTest, FuzzRandomSequenceKeepsInvariantsHolding) {
-    constexpr uint32_t seed = 12345; // print it so a failing run can be reproduced exactly
+    constexpr uint32_t seed = 12345; 
     std::cout << "fuzz seed: " << seed << "\n";
     std::mt19937 rng(seed);
 
