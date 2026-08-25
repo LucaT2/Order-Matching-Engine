@@ -9,3 +9,7 @@ PLAN.md
 build-asan-wsl
 COMMANDS.md
 BENCHMARK_RESULTS.md
+BENCHMARK.md
+BENCHMARK_UNOPTIMIZED.md
+build-asan/
+

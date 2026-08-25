@@ -55,3 +55,9 @@ gtest_discover_tests(unit_tests)
 add_executable(benchmark benchmarks/benchmark_engine.cpp)
 target_link_libraries(benchmark PRIVATE matching_engine_core)
 target_compile_options(benchmark PRIVATE -Wall -Wextra -O3)
+
+# Same methodology as optimized-array-implementation's apps/benchmark.cpp, ported here for a
+# direct, apples-to-apples comparison against BENCHMARK.md
+add_executable(benchmark_compare apps/benchmark_compare.cpp)
+target_link_libraries(benchmark_compare PRIVATE matching_engine_core)
+target_compile_options(benchmark_compare PRIVATE -Wall -Wextra -O3)
