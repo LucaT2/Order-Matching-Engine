@@ -33,7 +33,7 @@ struct Action {
 std::vector<Action> generateActions(size_t count, uint32_t seed) {
     std::mt19937 rng(seed);
     std::uniform_int_distribution<int> action_pick(0, 1); // 0 = submit, 1 = cancel
-    std::uniform_int_distribution<uint64_t> price_pick(95, 105);
+    std::uniform_int_distribution<uint64_t> price_pick(0, 999); // 1000 price levels
     std::uniform_int_distribution<uint32_t> qty_pick(1, 20);
     std::uniform_int_distribution<int> side_pick(0, 1);
     std::uniform_int_distribution<uint64_t> owner_pick(1, 4);
