@@ -30,7 +30,7 @@ void printTrades(const std::vector<Trade>& trades) {
 } // namespace
 
 int main() {
-    OrderBook book(64);
+    OrderBook book(64, 101, 100);
 
     std::cout << "Resting two sell orders (100x5, 101x5)...\n";
     printTrades(book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 100, 5, /*owner*/ 100)));

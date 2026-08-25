@@ -5,7 +5,10 @@ build/
 .vscode/
 .DS_Store
 CMakeUserPresets.json
-PLAN.md
 build-asan-wsl
 COMMANDS.md
-BENCHMARK_RESULTS.md
+PLAN.md
+build-asan/
+BENCHMARK_OPTIMIZED.md
+BENCHMARK_UNOPTIMIZED.md
+BENCHMARK_PASSIVE_FLOW.md

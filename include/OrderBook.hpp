@@ -17,14 +17,34 @@ class OrderBook{
             MemoryPool<Order> pool;
 
             // Maps for price levels, both bids and sells
-            std::map<uint64_t, PriceLevel, std::greater<uint64_t>> bids_;
-            std::map<uint64_t, PriceLevel> sells_;
-            
+            std::vector<PriceLevel> bids_;
+            std::vector<PriceLevel> sells_;
+
             // Map for cancels
             std::unordered_map<uint64_t, uint32_t> order_lookup_;
 
+            //Tick size is defined in Order.hpp so must calculate prices regarding that
+            uint64_t max_price_; 
+            uint64_t min_price_;
+
+            //Best buy and sell prices
+            uint64_t best_bid_idx_;
+            uint64_t best_ask_idx_;
+
+            // Step best_bid_idx_/best_ask_idx_ inward past levels that have gone
+            // empty since they were last used as the scan starting point
+            void refreshBestBid();
+            void refreshBestAsk();
+
         public:
-            explicit OrderBook(uint64_t cap): pool(cap){}
+            explicit OrderBook(uint64_t cap, uint64_t max_price,
+            uint64_t min_price): pool(cap),
+            bids_(max_price - min_price + 1),
+            sells_(max_price - min_price + 1),
+            max_price_(max_price),
+            min_price_(min_price),
+            best_bid_idx_(UINT64_MAX),
+            best_ask_idx_(UINT64_MAX){}
 
             std::vector<Trade> submit(Order order);
 

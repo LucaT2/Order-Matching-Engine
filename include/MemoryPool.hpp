@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <stdexcept>
+#include <cassert>
 
 template <typename T>
 class MemoryPool

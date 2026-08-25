@@ -50,9 +50,7 @@ uint32_t MemoryPool<T>::allocate()
 template <typename T>
 void MemoryPool<T>::deallocate(uint32_t idx)
 {
-    if (idx >= capacity_) {
-        throw std::out_of_range("Index out of range");
-    }
+    assert(idx < capacity_ && "MemoryPool: index out of range");
 
     // Write the current free_head_ into this slot
     uint32_t *slot = reinterpret_cast<uint32_t *>(
@@ -67,27 +65,21 @@ void MemoryPool<T>::deallocate(uint32_t idx)
 template <typename T>
 T &MemoryPool<T>::at(uint32_t idx)
 {
-    if (idx >= capacity_) {
-        throw std::out_of_range("Index out of range");
-    }
+    assert(idx < capacity_ && "MemoryPool: index out of range");
     return *reinterpret_cast<T *>(storage_ + (idx * sizeof(T)));
 }
 
 template <typename T>
 const T &MemoryPool<T>::at(uint32_t idx) const
 {
-    if (idx >= capacity_) {
-        throw std::out_of_range("Index out of range");
-    }
+    assert(idx < capacity_ && "MemoryPool: index out of range");
     return *reinterpret_cast<const T *>(storage_ + (idx * sizeof(T)));
 }
 
 template <typename T>
 T *MemoryPool<T>::ptr(uint32_t idx)
 {
-    if (idx >= capacity_) {
-        throw std::out_of_range("Index out of range");
-    }
+    assert(idx < capacity_ && "MemoryPool: index out of range");
     return reinterpret_cast<T *>(storage_ + (idx * sizeof(T)));
 }
 
