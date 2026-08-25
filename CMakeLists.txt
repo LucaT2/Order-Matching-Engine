@@ -32,8 +32,9 @@ target_link_libraries(matching_engine PRIVATE matching_engine_core)
 
 target_compile_options(matching_engine PRIVATE -Wall -Wextra -O3)
 
-# --- Benchmark: throughput + latency percentiles, takes an optional RNG seed ---
-add_executable(benchmark apps/benchmark.cpp)
+# --- Benchmark: throughput + latency percentiles, comparable against
+# unoptimized-map-implementation's benchmarks/benchmark_engine.cpp ---
+add_executable(benchmark benchmarks/benchmark_engine.cpp)
 target_link_libraries(benchmark PRIVATE matching_engine_core)
 target_compile_options(benchmark PRIVATE -Wall -Wextra -O3)
 

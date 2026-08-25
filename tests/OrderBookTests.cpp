@@ -206,18 +206,17 @@ TEST(OrderBookTest, IOCPartiallyFillsAndDiscardsRemainder) {
     EXPECT_EQ(trades2.size(), 0u);
 }
 
-TEST(OrderBookTest, BestPointerSkipsAcrossMultipleEmptyBitsetWords) {
-    // price range spans 301 levels (0..300), which needs 5 64-bit words in the
-    // occupancy bitset -- wide enough that closing the gap between two resting
-    // orders has to cross whole empty words, not just step +-1 a few times
+TEST(OrderBookTest, BestPointerSkipsAcrossManyEmptyLevels) {
+    // price range spans 301 levels (0..300) -- wide enough that closing the gap
+    // between two resting orders takes many refreshBestBid/Ask steps, not just one or two
     OrderBook book(64, 300, 0);
 
-    // asks: resting far apart, gap crosses multiple 64-level words
-    book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 10, 5, 1));   // word 0
-    book.submit(makeOrder(2, Side::Sell, OrderType::Limit, 250, 5, 2)); // word 3
+    // asks: resting far apart, large gap of empty levels between them
+    book.submit(makeOrder(1, Side::Sell, OrderType::Limit, 10, 5, 1));
+    book.submit(makeOrder(2, Side::Sell, OrderType::Limit, 250, 5, 2));
 
-    // draining the level at price 10 forces refreshBestAsk() to jump ahead
-    // across empty words 0-2 to find price 250
+    // draining the level at price 10 forces refreshBestAsk() to step ahead
+    // across the empty levels 11-249 to find price 250
     book.cancel(1);
 
     auto trades = book.submit(makeOrder(3, Side::Buy, OrderType::Limit, 250, 5, 3));
@@ -226,11 +225,11 @@ TEST(OrderBookTest, BestPointerSkipsAcrossMultipleEmptyBitsetWords) {
     EXPECT_EQ(trades[0].price, 250u);
 
     // bids: same idea, descending this time
-    book.submit(makeOrder(4, Side::Buy, OrderType::Limit, 20, 5, 4));  // word 0
-    book.submit(makeOrder(5, Side::Buy, OrderType::Limit, 280, 5, 5)); // word 4
+    book.submit(makeOrder(4, Side::Buy, OrderType::Limit, 20, 5, 4));
+    book.submit(makeOrder(5, Side::Buy, OrderType::Limit, 280, 5, 5));
 
     // draining the level at price 280 (the current best bid) forces
-    // refreshBestBid() to jump backward across empty words to find price 20
+    // refreshBestBid() to step backward across the empty levels to find price 20
     book.cancel(5);
 
     auto trades2 = book.submit(makeOrder(6, Side::Sell, OrderType::Limit, 20, 5, 6));
