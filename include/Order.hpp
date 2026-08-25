@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+const uint64_t TICK = 100;
+
 enum class Side : uint8_t {
     Buy,
     Sell
@@ -10,12 +12,6 @@ enum class Side : uint8_t {
 enum class OrderType : uint8_t {
     Limit,
     Market
-};
-
-enum class Action : uint8_t {
-    New,
-    Cancel,
-    Modify
 };
 
 enum class TimeInForce : uint8_t{

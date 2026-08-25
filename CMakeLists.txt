@@ -56,3 +56,8 @@ target_compile_options(unit_tests PRIVATE -Wall -Wextra)
 
 include(GoogleTest)
 gtest_discover_tests(unit_tests)
+
+# Benchmarks
+add_executable(benchmark benchmarks/benchmark_engine.cpp)
+target_link_libraries(benchmark PRIVATE matching_engine_core)
+target_compile_options(benchmark PRIVATE -Wall -Wextra -O3)
