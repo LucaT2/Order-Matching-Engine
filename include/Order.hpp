@@ -20,6 +20,8 @@ enum class TimeInForce : uint8_t{
     FOK
 };
 
+enum class CommandType : uint8_t { Submit, Cancel };
+
 struct alignas(64) Order {
     uint64_t orderId;   // 8 bytes: Unique identifier
     uint64_t price;     // 8 bytes: Price in ticks/cents (fixed-point math, no floats)
@@ -31,4 +33,5 @@ struct alignas(64) Order {
     OrderType type;     // 1 byte : Limit, Market
     TimeInForce tif;    // 1 byte: How to execute the action
     uint64_t ownerId; // 8 bytes: id of the owner of the trade
+    CommandType command; // 1 byte: Submit or Cancel
 };

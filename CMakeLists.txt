@@ -7,6 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(HFT_NATIVE_ARCH "Enable -march=native (non-portable, faster on this machine only)" OFF)
 option(HFT_SANITIZE "Build with AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
 
+# Needed by anything using std::thread (SPSC queue tests, future producer/consumer demo)
+find_package(Threads REQUIRED)
+
 if (HFT_SANITIZE)
     add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1)
     add_link_options(-fsanitize=address,undefined)
@@ -56,3 +59,11 @@ target_compile_options(unit_tests PRIVATE -Wall -Wextra)
 
 include(GoogleTest)
 gtest_discover_tests(unit_tests)
+
+# --- SPSC queue tests: separate target since it's an independent component;
+# needs Threads::Threads for std::thread-based producer/consumer tests ---
+add_executable(spsc_tests tests/SPSCQueueTests.cpp)
+target_link_libraries(spsc_tests PRIVATE matching_engine_core GTest::gtest_main Threads::Threads)
+target_compile_options(spsc_tests PRIVATE -Wall -Wextra)
+
+gtest_discover_tests(spsc_tests)
