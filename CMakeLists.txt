@@ -6,13 +6,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(HFT_NATIVE_ARCH "Enable -march=native (non-portable, faster on this machine only)" OFF)
 option(HFT_SANITIZE "Build with AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
+option(HFT_TSAN "Build with ThreadSanitizer (Linux/WSL only; mutually exclusive with HFT_SANITIZE)" OFF)
 
 # Needed by anything using std::thread (SPSC queue tests, future producer/consumer demo)
 find_package(Threads REQUIRED)
 
+if (HFT_SANITIZE AND HFT_TSAN)
+    message(FATAL_ERROR "HFT_SANITIZE (ASan+UBSan) and HFT_TSAN cannot be combined in one build")
+endif()
+
 if (HFT_SANITIZE)
     add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1)
     add_link_options(-fsanitize=address,undefined)
+endif()
+
+if (HFT_TSAN)
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer -g -O1)
+    add_link_options(-fsanitize=thread)
 endif()
 
 # --- Core library: everything under include/ and src/, no main() here ---
@@ -62,7 +72,7 @@ gtest_discover_tests(unit_tests)
 
 # --- SPSC queue tests: separate target since it's an independent component;
 # needs Threads::Threads for std::thread-based producer/consumer tests ---
-add_executable(spsc_tests tests/SPSCQueueTests.cpp)
+add_executable(spsc_tests tests/SPSCQueueTests.cpp tests/SPSCIntegrationTests.cpp)
 target_link_libraries(spsc_tests PRIVATE matching_engine_core GTest::gtest_main Threads::Threads)
 target_compile_options(spsc_tests PRIVATE -Wall -Wextra)
 
