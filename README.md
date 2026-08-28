@@ -54,16 +54,14 @@ An early hypothesis went the wrong way. Widening the price range was expected to
 
 ## Concurrency
 
-`SPSCQueue<T, Capacity>` is a lock-free single-producer single-consumer ring buffer feeding order commands to the book from a separate thread. Assuming exactly one producer and one consumer is what removes the need for any CAS loop or lock, and it matches the intended architecture of one matching thread per symbol.
+`SPSCQueue<T, Capacity>` is a lock-free single-producer single-consumer ring buffer feeding order commands to the book from a separate thread. Restricting it to one producer and one consumer removes the need for any CAS loop or lock, and matches the intended architecture of one matching thread per symbol.
 
-- Fixed power-of-two capacity enforced by `static_assert`, so wrapping is a bitmask rather than a modulo. Storage is a `std::array` allocated once, so there is no heap traffic on the hot path.
-- Read and write indices sit on separate 64-byte cache lines. Without that, the producer's write to its index invalidates the consumer's cached copy of the line holding its own index on every operation, despite the two touching unrelated variables.
-- Each thread keeps a private, stale copy of the other's index and only re-reads the real atomic when that copy suggests full or empty. In steady state this turns a cross-core round trip per operation into roughly one per `Capacity` operations. The idea comes from the LMAX Disruptor.
-- Memory ordering is explicit: `relaxed` reading your own index, `acquire` reading the other thread's, `release` publishing your own. The release/acquire pair guarantees the ordinary non-atomic slot write is visible before the index update advertising it.
+- Fixed power-of-two capacity, so wrapping is a bitmask. Storage is a `std::array` allocated once, so there is no heap traffic on the hot path.
+- Read and write indices sit on separate 64-byte cache lines to avoid false sharing.
+- Each thread keeps a stale copy of the other's index and only re-reads the real atomic when that copy suggests full or empty, which is roughly once per `Capacity` operations instead of every one.
+- Memory ordering is explicit: `relaxed` reading your own index, `acquire` reading the other thread's, `release` publishing your own.
 
-One slot is left unused so `head == tail` unambiguously means empty, making usable capacity `Capacity - 1`.
-
-`Order` carries a `CommandType` discriminant (`Submit` or `Cancel`) so one payload type covers both operations and the queue element stays one cache line. The consumer thread is the only thread that touches `OrderBook`, so the book needs no locks and required no changes.
+`Order` carries a `CommandType` discriminant so one payload type covers both submit and cancel. The consumer thread is the only thread that touches `OrderBook`, so the book needs no locks and required no changes.
 
 ## Tests
 
